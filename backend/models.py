@@ -9,6 +9,7 @@ ComparisonRule = Literal[
 ]
 Status = Literal["stated", "inferred", "missing"]
 VerdictKind = Literal["win", "lose", "tie", "n/a"]
+SourceKind = Literal["notes", "public", "internal"]
 
 
 class FieldDefinition(BaseModel):
@@ -61,6 +62,10 @@ class Source(BaseModel):
     source_id: str
     entity_id: str
     text: str
+    title: str = ""
+    kind: SourceKind = "notes"
+    captured_at: str = Field("", description="ISO date the notes were captured; freshness is computed from it")
+    outdated: bool = False
 
 
 class Comparison(BaseModel):
@@ -85,6 +90,8 @@ class VerificationReport(BaseModel):
 class EntityInput(BaseModel):
     name: str = ""
     text: str
+    kind: SourceKind = "notes"
+    captured_at: str | None = Field(None, description="ISO date; defaults to today")
 
     @field_validator("text")
     @classmethod
@@ -115,6 +122,24 @@ class CellPatch(BaseModel):
 
 class ExportRequest(BaseModel):
     format: Literal["markdown", "csv", "html", "pptx"]
+
+
+class SourcePatch(BaseModel):
+    source_id: str
+    outdated: bool | None = None
+    captured_at: str | None = None
+
+
+class Objection(BaseModel):
+    field_id: str
+    objection: str = Field(description="what the buyer might say, quoting the competitor's value")
+    response: str = Field(description="what the seller says back, using only the compared values")
+
+
+class Battlecard(BaseModel):
+    entity_id: str
+    objections: list[Objection]
+    generated_at: str
 
 
 if __name__ == "__main__":

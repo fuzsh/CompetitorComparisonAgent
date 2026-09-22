@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 from . import export, jev, llm, pipeline
-from .models import CellPatch, Comparison, CompareRequest, CompareResponse, ExportRequest
+from datetime import UTC, datetime
+
+from .models import Battlecard, CellPatch, Comparison, CompareRequest, CompareResponse, ExportRequest, SourcePatch
 from .text import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -90,6 +92,46 @@ async def patch_cell(cid: str, p: CellPatch):
     _, judge, _ = backends()
     c.verdicts = [v for v in c.verdicts if v.field_id != p.field_id] + await pipeline.judge_all([field], c.cells, c.entities, judge)
     return c
+
+
+@app.patch("/api/comparisons/{cid}/source", response_model=Comparison)
+def patch_source(cid: str, p: SourcePatch):
+    """Mark a source outdated (its cells show as stale) or confirm it still valid (re-dates it)."""
+    c = STORE.get(cid)
+    if not c:
+        raise HTTPException(404, "unknown comparison")
+    src = next((s for s in c.sources if s.source_id == p.source_id), None)
+    if not src:
+        raise HTTPException(404, "unknown source")
+    if p.outdated is not None:
+        src.outdated = p.outdated
+    if p.captured_at is not None:
+        src.captured_at = p.captured_at
+    return c
+
+
+@app.post("/api/comparisons/{cid}/battlecard/{eid}", response_model=Battlecard)
+async def battlecard(cid: str, eid: str):
+    """Objection handling for one competitor, generated on demand from the verified cells and cached on the comparison."""
+    c = STORE.get(cid)
+    if not c:
+        raise HTTPException(404, "unknown comparison")
+    comp = next((e for e in c.entities if e.id == eid and not e.is_your_company), None)
+    if not comp:
+        raise HTTPException(404, "unknown competitor")
+    you = next(e for e in c.entities if e.is_your_company)
+    cells = {(x.entity_id, x.field_id): x for x in c.cells}
+    verdicts = {(v.entity_id, v.field_id): v.verdict for v in c.verdicts}
+    rows = []
+    for f in c.fields:
+        yc, tc = cells[(you.id, f.id)], cells[(comp.id, f.id)]
+        v = verdicts.get((comp.id, f.id), "n/a")
+        if tc.status != "missing" and (v in ("lose", "tie") or yc.status == "missing"):
+            rows.append((f, yc, tc, v))
+    items = await llm.objections(you, comp, rows) if rows else []
+    card = Battlecard(entity_id=eid, objections=items, generated_at=datetime.now(UTC).isoformat(timespec="seconds"))
+    c.meta.setdefault("battlecards", {})[eid] = card.model_dump()
+    return card
 
 
 @app.post("/api/comparisons/{cid}/export")

@@ -225,6 +225,32 @@
         "text": {
           "title": "Text",
           "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "default": "notes",
+          "enum": [
+            "notes",
+            "public",
+            "internal"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "captured_at": {
+          "default": "",
+          "description": "ISO date the notes were captured; freshness is computed from it",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "outdated": {
+          "default": false,
+          "title": "Outdated",
+          "type": "boolean"
         }
       },
       "required": [

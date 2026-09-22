@@ -16,6 +16,7 @@ from .text import find_quote
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 SYSTEM_EXTRACT = (PROMPTS / "extraction_system.md").read_text()
 SYSTEM_JUDGE = (PROMPTS / "judge_system.md").read_text()
+SYSTEM_BATTLECARD = (PROMPTS / "battlecard_system.md").read_text()
 
 
 class ExtractedEvidence(BaseModel):
@@ -43,6 +44,16 @@ class JudgedVerdict(BaseModel):
 
 class Judgement(BaseModel):
     verdicts: list[JudgedVerdict]
+
+
+class ObjectionItem(BaseModel):
+    field_id: str
+    objection: str
+    response: str
+
+
+class Objections(BaseModel):
+    items: list[ObjectionItem]
 
 
 async def ask(system: str, prompt: str, schema: type[BaseModel]) -> BaseModel:
@@ -92,3 +103,15 @@ async def judge(you: Entity, comp: Entity, pairs: list[tuple[FieldDefinition, Ce
     r: Judgement = await ask(SYSTEM_JUDGE, prompt, Judgement)
     wanted = {f.id for f, _, _ in pairs}
     return [{"field_id": v.field_id, "verdict": v.verdict, "rationale": v.rationale} for v in r.verdicts if v.field_id in wanted]
+
+
+async def objections(you: Entity, comp: Entity, rows: list[tuple[FieldDefinition, Cell, Cell, str]]) -> list[dict]:
+    """Objection handling for the battlecard. `rows` = (field, your_cell, their_cell, verdict) for rows worth preparing."""
+    lines = "\n".join(
+        f'- {f.id} ({f.label}) verdict={v}: {you.name}: "{y.display_value or "not in our notes"}" | {comp.name}: "{t.display_value}"'
+        for f, y, t, v in rows
+    )
+    prompt = f"Our company: {you.name}. Competitor: {comp.name}.\n\nRows:\n{lines}\n\nWrite at most 4 objection/response pairs, one per field_id, most damaging first."
+    r: Objections = await ask(SYSTEM_BATTLECARD, prompt, Objections)
+    wanted = {f.id for f, _, _, _ in rows}
+    return [{"field_id": i.field_id, "objection": i.objection, "response": i.response} for i in r.items if i.field_id in wanted][:4]

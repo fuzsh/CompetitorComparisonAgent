@@ -5,7 +5,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .models import (Cell, Comparison, CompareRequest, CompareResponse, Entity, FieldDefinition, Source,
@@ -24,17 +24,18 @@ SupportCheck = Callable[[list[Cell], list[FieldDefinition], list[Source]], Await
 
 # ---------------- 1. segmenting-notes ----------------
 def segment(req: CompareRequest) -> tuple[list[Entity], list[Source]]:
-    blocks = [("you", req.your_company.name.strip() or "Your Company", True, req.your_company.text)]
-    blocks += [(f"c{i}", c.name.strip() or f"Competitor {i}", False, c.text) for i, c in enumerate(req.competitors, 1)]
+    blocks = [("you", req.your_company.name.strip() or "Your Company", True, req.your_company)]
+    blocks += [(f"c{i}", c.name.strip() or f"Competitor {i}", False, c) for i, c in enumerate(req.competitors, 1)]
     entities, sources = [], []
-    for eid, name, is_you, text in blocks:
-        n = len(sentences(text))
+    for eid, name, is_you, inp in blocks:
+        n = len(sentences(inp.text))
         if n == 0:
             raise ValueError(f"{name}: notes contain no sentences")
         if n > MAX_SENTENCES:
             raise ValueError(f"{name}: notes too long ({n} sentences, max {MAX_SENTENCES})")
         entities.append(Entity(id=eid, name=name, is_your_company=is_you, source_id=f"src_{eid}"))
-        sources.append(Source(source_id=f"src_{eid}", entity_id=eid, text=text))
+        sources.append(Source(source_id=f"src_{eid}", entity_id=eid, text=inp.text, title=f"{name} notes", kind=inp.kind,
+                              captured_at=inp.captured_at or date.today().isoformat()))
     return entities, sources
 
 

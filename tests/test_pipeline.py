@@ -104,3 +104,13 @@ def test_empty_notes_rejected():
     import pytest
     with pytest.raises(Exception):
         CompareRequest(**json.loads((FIX / "empty.json").read_text()))
+
+
+def test_sources_carry_kind_and_capture_date():
+    from datetime import date
+    from backend.pipeline import segment
+    req = json.loads((FIX / "worked_example.json").read_text())
+    req["competitors"][0] |= {"kind": "public", "captured_at": "2026-06-01"}
+    _, sources = segment(CompareRequest(**req))
+    assert sources[0].kind == "notes" and sources[0].captured_at == date.today().isoformat()
+    assert sources[1].kind == "public" and sources[1].captured_at == "2026-06-01" and sources[1].title == "NoteRival notes"
