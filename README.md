@@ -13,7 +13,7 @@ marketer or seller can drop into a deck. The table is honest by construction:
 
 Deterministic orchestrator (`backend/pipeline.py`) that calls the model in exactly two places:
 
-| # | Skill (`skills/*/SKILL.md`) | Code | Model? |
+| # | Skill (`.claude/skills/*/SKILL.md`, symlinked as `skills/`) | Code | Model? |
 |---|---|---|---|
 | 1 | segmenting-notes | `pipeline.segment`, `text.sentences` | no |
 | 2 | selecting-schema | `pipeline.select_schema` + `presets/*.json` | no |
@@ -48,6 +48,10 @@ cd frontend && npm install && npm run dev   # http://localhost:3000
 
 Open http://localhost:3000, click **Load example → worked example**, then **Generate comparison**. Click any cell to
 see the supporting quote highlighted in the source notes; edit a cell to re-judge that row; export from the bar.
+
+Skills live in `.claude/skills/` so an interactive Claude Code session in this repo discovers them (the plan's
+`skills/` path is a symlink to the same folder). The headless extraction calls run tool-less with their own system
+prompt and do not use skills.
 
 ## API
 
