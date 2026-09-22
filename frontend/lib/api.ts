@@ -1,4 +1,4 @@
-import type { CompareRequest, Comparison, Stage, Status } from "./types";
+import type { CompareRequest, Comparison, FieldDefinition, Stage, Status } from "./types";
 
 export const API = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8010";
 
@@ -7,7 +7,8 @@ async function ok(res: Response): Promise<Response> {
   return res;
 }
 
-export const getPresets = () => fetch(`${API}/api/presets`).then(ok).then((r) => r.json() as Promise<{ industries: Record<string, string[]> }>);
+export const getPresets = () =>
+  fetch(`${API}/api/presets`).then(ok).then((r) => r.json() as Promise<{ industries: Record<string, string[]>; fields: Record<string, FieldDefinition[]>; core_fields: FieldDefinition[] }>);
 export const getExamples = () => fetch(`${API}/api/examples`).then(ok).then((r) => r.json() as Promise<Record<string, CompareRequest>>);
 export const getHealth = () => fetch(`${API}/api/health`).then(ok).then((r) => r.json() as Promise<Record<string, string | boolean>>);
 

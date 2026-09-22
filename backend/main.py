@@ -44,7 +44,9 @@ def examples():
 
 @app.get("/api/presets")
 def presets():
-    return {"industries": pipeline.industries(), "core_fields": [f.model_dump() for f in pipeline.load_preset("core_fields")]}
+    return {"industries": pipeline.industries(),
+            "fields": {k: [f.model_dump() for f in pipeline.load_preset(k)] for k in pipeline.industries()},
+            "core_fields": [f.model_dump() for f in pipeline.load_preset("core_fields")]}
 
 
 @app.post("/api/comparisons", response_model=CompareResponse)
