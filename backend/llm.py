@@ -107,10 +107,10 @@ async def judge(you: Entity, comp: Entity, pairs: list[tuple[FieldDefinition, Ce
 
 async def objections(you: Entity, comp: Entity, rows: list[tuple[FieldDefinition, Cell, Cell, str]]) -> list[dict]:
     """Objection handling for the battlecard. `rows` = (field, your_cell, their_cell, verdict) for rows worth preparing."""
-    lines = "\n".join(
-        f'- {f.id} ({f.label}) verdict={v}: {you.name}: "{y.display_value or "not in our notes"}" | {comp.name}: "{t.display_value}"'
-        for f, y, t, v in rows
-    )
+    def side(name: str, c: Cell) -> str:
+        quote = " ".join(e.quote for e in c.evidence if e.verified)
+        return f'{name}: "{c.display_value or "not in our notes"}"' + (f' (their notes say: "{quote}")' if quote else "")
+    lines = "\n".join(f"- {f.id} ({f.label}) verdict={v}: {side(you.name, y)} | {side(comp.name, t)}" for f, y, t, v in rows)
     prompt = f"Our company: {you.name}. Competitor: {comp.name}.\n\nRows:\n{lines}\n\nWrite at most 4 objection/response pairs, one per field_id, most damaging first."
     r: Objections = await ask(SYSTEM_BATTLECARD, prompt, Objections)
     wanted = {f.id for f, _, _, _ in rows}

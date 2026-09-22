@@ -126,7 +126,7 @@ async def battlecard(cid: str, eid: str):
     for f in c.fields:
         yc, tc = cells[(you.id, f.id)], cells[(comp.id, f.id)]
         v = verdicts.get((comp.id, f.id), "n/a")
-        if tc.status != "missing" and (v in ("lose", "tie") or yc.status == "missing"):
+        if f.comparison_rule != "not_compared" and tc.status != "missing" and (v in ("lose", "tie") or yc.status == "missing"):
             rows.append((f, yc, tc, v))
     items = await llm.objections(you, comp, rows) if rows else []
     card = Battlecard(entity_id=eid, objections=items, generated_at=datetime.now(UTC).isoformat(timespec="seconds"))
