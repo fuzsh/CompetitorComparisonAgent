@@ -3,7 +3,7 @@ import { useState } from "react";
 import Corners from "./Corners";
 import SourceCard from "./SourceCard";
 import TemplatePicker from "./TemplatePicker";
-import { KIND_LABEL, fmtDate, freshness, levelClass } from "@/lib/freshness";
+import { fmtDate, freshness, kindLabel, kindOf, levelClass } from "@/lib/freshness";
 import type { EntityInput, FieldDefinition, Source } from "@/lib/types";
 
 const CONNECTORS: [string, string][] = [
@@ -47,7 +47,7 @@ export default function SourcesTab({
                 <tr key={s.source_id}>
                   <td>{s.title || `${names[s.entity_id]} notes`}</td>
                   <td>{names[s.entity_id]}</td>
-                  <td><span className={`tag-kind tag-kind-${s.kind}`}>{KIND_LABEL[s.kind]}</span></td>
+                  <td><span className={`tag-kind tag-kind-${kindOf(s.kind)}`}>{kindLabel(s.kind)}</span></td>
                   <td>{fmtDate(s.captured_at)}</td>
                   <td className={levelClass[fresh.level]}>{fresh.label}</td>
                   <td><button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "0 4px" }} onClick={() => view(s.entity_id)}>View</button></td>

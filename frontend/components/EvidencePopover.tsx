@@ -3,7 +3,7 @@ import { useState } from "react";
 import Corners from "./Corners";
 import { StatusBadge, VERDICT_LABEL } from "./ComparisonTable";
 import { patchCell, patchSource } from "@/lib/api";
-import { KIND_LABEL, fmtDate, freshness, levelClass } from "@/lib/freshness";
+import { fmtDate, freshness, kindLabel, kindOf, levelClass } from "@/lib/freshness";
 import type { Cell, Comparison, Entity, FieldDefinition, Source, Status, Verdict } from "@/lib/types";
 
 /** "Where does this come from?" — the cell's value, its verdict, and the dated source block(s) with verbatim quotes. */
@@ -63,7 +63,7 @@ export default function EvidencePopover({
 
       <div className="blueprint" style={{ padding: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className={`tag-kind tag-kind-${source.kind}`}>{KIND_LABEL[source.kind]}</span>
+          <span className={`tag-kind tag-kind-${kindOf(source.kind)}`}>{kindLabel(source.kind)}</span>
           <span className={levelClass[fresh.level]} style={{ fontSize: 11 }}>● Captured {fmtDate(source.captured_at)} · {fresh.label} old</span>
         </div>
         <div style={{ fontWeight: 500, fontSize: 13, marginTop: 6 }}>{source.title || `${entity.name} notes`}</div>

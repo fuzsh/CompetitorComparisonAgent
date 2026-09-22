@@ -2,6 +2,13 @@ import type { Source, SourceKind } from "./types";
 
 export type Level = "fresh" | "aging" | "stale";
 export const KIND_LABEL: Record<SourceKind, string> = { notes: "Notes", public: "Public", internal: "Internal" };
+/** Tolerant lookups: sources saved by older builds may lack `kind`. */
+export const kindOf = (k: string | undefined): SourceKind => (k && k in KIND_LABEL ? (k as SourceKind) : "notes");
+export const kindLabel = (k: string | undefined) => KIND_LABEL[kindOf(k)];
+
+/** Fill fields that older saved comparisons did not have. */
+export const normalizeSource = (s: Partial<Source> & { source_id: string; entity_id: string; text: string }): Source =>
+  ({ title: "", captured_at: "", outdated: false, ...s, kind: kindOf(s.kind) });
 
 export const daysOld = (iso: string) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : 0);
 

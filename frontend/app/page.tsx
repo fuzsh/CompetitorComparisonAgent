@@ -12,7 +12,7 @@ import Tabs, { type TabId } from "@/components/Tabs";
 import { prettyIndustry } from "@/components/TemplatePicker";
 import ThemeToggle from "@/components/ThemeToggle";
 import { API, exportComparison, getExamples, getHealth, getPresets, streamComparison } from "@/lib/api";
-import { KIND_LABEL, fmtDate } from "@/lib/freshness";
+import { fmtDate, kindLabel, normalizeSource } from "@/lib/freshness";
 import type { Cell, CompareRequest, CompareResponse, Comparison, Entity, EntityInput, FieldDefinition, Source, Verdict, VerificationReport } from "@/lib/types";
 
 const empty = (): EntityInput => ({ name: "", text: "", kind: "notes", captured_at: null });
@@ -49,8 +49,13 @@ export default function Workspace() {
     getHealth().then(setHealth).catch(() => {});
     try {
       const raw = sessionStorage.getItem(SAVED);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore client-only storage after hydration
-      if (raw) { setResult(JSON.parse(raw) as CompareResponse); setPhase("done"); setTab("overview"); }
+      if (raw) {
+        const saved = JSON.parse(raw) as CompareResponse;
+        saved.comparison.sources = (saved.comparison.sources ?? []).map(normalizeSource);
+        saved.comparison.meta = saved.comparison.meta ?? {};
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- restore client-only storage after hydration
+        setResult(saved); setPhase("done"); setTab("overview");
+      }
     } catch {}
   }, []);
 
@@ -83,8 +88,8 @@ export default function Workspace() {
   const names = Object.fromEntries(entities.map((e) => [e.id, e.name]));
   const compNames = entities.filter((e) => !e.is_your_company).map((e) => e.name);
 
-  const kinds = new Set(sources.map((s) => s.kind));
-  const kindSummary = kinds.has("public") && kinds.has("internal") ? "public and internal" : [...kinds].map((k) => KIND_LABEL[k].toLowerCase()).join(" and ") || "notes";
+  const kinds = new Set(sources.map((s) => kindLabel(s.kind).toLowerCase()));
+  const kindSummary = kinds.has("public") && kinds.has("internal") ? "public and internal" : [...kinds].join(" and ") || "notes";
   const updated = comparison?.meta.created_at ? `Updated ${fmtDate(String(comparison.meta.created_at))}` : "Not generated yet";
   const subhead = tab === "sources"
     ? "Step 1 · Sources and inputs. Everything in the tables traces back to one of these."

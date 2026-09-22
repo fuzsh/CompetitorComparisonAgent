@@ -3,7 +3,7 @@ import { useState } from "react";
 import Corners from "./Corners";
 import type { Sel } from "./ComparisonTable";
 import { generateBattlecard } from "@/lib/api";
-import { KIND_LABEL, fmtDate, freshness, levelClass } from "@/lib/freshness";
+import { fmtDate, freshness, kindLabel, kindOf, levelClass } from "@/lib/freshness";
 import type { Battlecard, Cell, Comparison, Entity, FieldDefinition, Source, Verdict } from "@/lib/types";
 
 type Row = { f: FieldDefinition; y: Cell; t: Cell; v?: Verdict };
@@ -31,7 +31,7 @@ function Bullets({ items, color, you, comp, source, onSelect }: { items: Row[]; 
           <span>
             <b>{r.f.label}.</b> {you.name}: {val(r.y, you.name)} vs {comp.name}: {val(r.t, comp.name)}.{" "}
             {r.v?.rationale && <span className="muted">{r.v.rationale}</span>}{" "}
-            {source && <span className={`tag-kind tag-kind-${source.kind}`}>{KIND_LABEL[source.kind]}</span>}{" "}
+            {source && <span className={`tag-kind tag-kind-${kindOf(source.kind)}`}>{kindLabel(source.kind)}</span>}{" "}
             {(r.y.status === "inferred" || r.t.status === "inferred") && <span className="badge badge-inferred">inferred</span>}
           </span>
         </li>
@@ -82,7 +82,7 @@ export default function BattlecardTab({
       "", `## Where ${comp.name} genuinely wins`, ...(loses.length ? loses.map(li) : ["- (none in the notes)"]), "", "## Even", ...(ties.length ? ties.map(li) : ["- (none)"]),
       "", "## Gaps to close", ...gaps.map((r) => `- ${r.f.label}: ${[r.y.status === "missing" ? `${you.name} not in the notes` : "", r.t.status === "missing" ? `${comp.name} not in the notes` : ""].filter(Boolean).join("; ")}`),
       ...(card?.objections.length ? ["", "## Objection handling", ...card.objections.map((o) => `- "${o.objection}" — ${o.response}`)] : []),
-      "", source ? `Source: ${source.title} · ${KIND_LABEL[source.kind]} · captured ${fmtDate(source.captured_at)}` : ""];
+      "", source ? `Source: ${source.title} · ${kindLabel(source.kind)} · captured ${fmtDate(source.captured_at)}` : ""];
     return lines.join("\n");
   };
   const copy = async () => { try { await navigator.clipboard.writeText(markdown()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {} };
@@ -163,7 +163,7 @@ export default function BattlecardTab({
           ) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>Every compared row has data on both sides.</p>}
           {source && fresh && (
             <p className="muted" style={{ margin: "10px 0 0", fontSize: 11, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <span>Source on this card: {source.title} · {KIND_LABEL[source.kind]} · <span className={levelClass[fresh.level]}>captured {fmtDate(source.captured_at)} ({fresh.label})</span></span>
+              <span>Source on this card: {source.title} · {kindLabel(source.kind)} · <span className={levelClass[fresh.level]}>captured {fmtDate(source.captured_at)} ({fresh.label})</span></span>
               <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: "0 4px" }} onClick={onOpenSources}>Review sources →</button>
             </p>
           )}
