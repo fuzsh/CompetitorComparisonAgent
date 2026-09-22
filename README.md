@@ -9,6 +9,66 @@ marketer or seller can drop into a deck. The table is honest by construction:
 - each competitor cell is marked **win / lose / tie / n-a** versus your company with a one-line rationale,
 - exports to Markdown, CSV, HTML, and a PPTX slide.
 
+## How it works
+
+```mermaid
+flowchart TD
+    subgraph UI["Frontend · Next.js workspace · localhost:3000"]
+        IN["Sources &amp; inputs<br/>your notes + up to 3 competitors<br/>type · capture date · preset · custom rows"]
+        OV["Overview"]
+        BC["Battlecards"]
+        FD["Full details"]
+        POP["Where does this come from?<br/>quote · freshness · edit &amp; re-judge"]
+    end
+
+    subgraph API["Backend · FastAPI · localhost:8010 — deterministic orchestrator"]
+        direction TB
+        S1["1 · segmenting-notes<br/>one source per box, sentence offsets"]
+        S2["2 · selecting-schema<br/>core + industry preset + custom rows"]
+        S3["3 · extracting-evidence<br/>one Cell per field per entity<br/>value · stated / inferred / missing · verbatim quote"]
+        S4["4 · verifying-evidence<br/>is the quote really in the notes?<br/>is the number really in the quote?<br/>downgrade, never invent"]
+        S5["5 · judging-comparison<br/>rules first: price, numbers, presence<br/>model only for qualitative rows · n/a on missing"]
+        S6["6 · rendering-tables<br/>table payload · Markdown · CSV · HTML · PPTX"]
+        STORE[("comparison store<br/>cells · verdicts · sources · battlecards")]
+    end
+
+    subgraph MODELS["Models"]
+        CL["Headless Claude Code<br/><code>claude -p --json-schema</code><br/>no API key, local login"]
+        JEV["Jev · TypeSafe — optional attachment<br/>quote-support check · judge · extractor"]
+    end
+
+    PRESETS[/"presets/*.json"/] --> S2
+    PROMPTS[/"prompts/*.md"/] --> S3
+
+    IN -- "POST /api/comparisons/stream<br/>SSE: segment · schema · extract · verify · judge · done" --> S1
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> STORE
+    S3 -. "schema-constrained JSON" .-> CL
+    S5 -. "qualitative rows" .-> CL
+    S4 -. "does this quote support this value?" .-> JEV
+    S5 -. "JUDGE=jev" .-> JEV
+
+    STORE --> OV & BC & FD
+    OV & BC & FD -- "click a cell" --> POP
+    POP -- "PATCH cell · PATCH source" --> STORE
+    BC -- "POST battlecard → objection handling" --> CL
+    FD -- "POST export" --> S6
+```
+
+How one cell earns its label — the model proposes, code decides:
+
+```mermaid
+flowchart LR
+    Q["model returns<br/>value + status + quote"] --> V{"quote is a verbatim<br/>substring of the notes?"}
+    V -- no --> M["missing<br/>(price / number / boolean)<br/>or inferred (text)"]
+    V -- yes --> N{"specific number<br/>inside the quote?"}
+    N -- "no, but claimed" --> I["inferred"]
+    N -- yes / not numeric --> S["stated ✓"]
+    S & I --> J{"both sides present?"}
+    M --> NA["verdict n/a<br/>never guess a winner"]
+    J -- no --> NA
+    J -- yes --> R["rule or model verdict<br/>win · lose · tie"]
+```
+
 ## Architecture
 
 Deterministic orchestrator (`backend/pipeline.py`) that calls the model in exactly two places:
@@ -46,22 +106,35 @@ python main.py               # http://localhost:8010  (needs `claude` on PATH an
 cd frontend && npm install && npm run dev   # http://localhost:3000
 ```
 
-Open http://localhost:3000. The UI is a single **Comparison Workspace** (implemented from the Claude Design
-project "Comparison Workspace (redesign)" on the Industry design system): a sticky sources sidebar on the left
-(your company as the anchor column, up to three competitors with a sentence meter, industry preset and custom rows,
-one Generate button) and the results on the right (evidence mix, verdict counts and a verification receipt; the
-blueprint-framed table with stated / inferred / missing badges and win / lose tints; an evidence panel that highlights
-the exact quote in the source notes and lets you edit a cell and re-judge its row; Markdown / CSV / HTML / PPTX
-export). Click **load worked example** in the sidebar for the demo inputs. Theme: light / system / dark in the header.
+Open http://localhost:3000. The UI is a single workspace with four tabs, built on the Industry design system from
+the Claude Design project and the structure of the product mockup (`Mockup.pdf`):
 
-The design system's CSS is ported verbatim to `frontend/app/industry.css`; dark-mode tokens and the workspace
-classes live in `frontend/app/globals.css`.
+- **Sources & inputs** — source register (type, capture date, freshness), notes pasted by hand for your company and up
+  to three competitors (each block tagged Public / Internal / Notes with a capture date), industry preset and custom
+  rows, Generate. The "Connected data sources" panel (HubSpot, Confluence, web monitor, …) is a concept only and is
+  marked as such; nothing behind it is implemented.
+- **Overview** — the same verified cells grouped like the mockup: company basics side by side, key features as
+  green check / red cross / amber inferred / dash not-in-notes, pricing and numbers with the win / lose badge.
+- **Battlecards** — per competitor: stat tiles, "Where you win / Where they genuinely win" derived from the verdicts,
+  gaps the notes can't settle, and objection handling drafted on demand by headless Claude from the compared values
+  only (`POST /api/comparisons/{id}/battlecard/{entity_id}`, cached on the comparison). Copy as Markdown.
+- **Full details** — the evidence-first table with the stats strip, stage progress, status badges and tints.
+
+Click any cell anywhere for **Where does this come from?**: value, verdict, and the dated source block with verbatim
+quotes; mark the source outdated or confirm it still valid (`PATCH /api/comparisons/{id}/source`), edit the cell and
+re-judge the row. Freshness rules: fresh under 30 days, aging 30 to 90, stale over 90 or marked outdated; cells from
+stale sources carry a tag in every table.
+
+The design system's CSS is ported verbatim to `frontend/app/industry.css`; dark-mode tokens, semantic colors and the
+workspace classes live in `frontend/app/globals.css`.
 
 ## API
 
 - `POST /api/comparisons` – run the pipeline, returns `{comparison, verification_report}`
 - `POST /api/comparisons/stream` – same, as server-sent events: `segment, schema, extract, verify, judge, done`
 - `PATCH /api/comparisons/{id}/cell` – edit one cell and re-judge that row
+- `PATCH /api/comparisons/{id}/source` – mark a source outdated / confirm still valid (re-dates it)
+- `POST /api/comparisons/{id}/battlecard/{entity_id}` – draft objection handling for one competitor (headless Claude)
 - `POST /api/comparisons/{id}/export` – `{"format": "markdown" | "csv" | "html" | "pptx"}`
 - `GET /api/presets`, `GET /api/examples`, `GET /api/health`
 
