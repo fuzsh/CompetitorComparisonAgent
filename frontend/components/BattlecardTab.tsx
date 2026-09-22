@@ -4,10 +4,42 @@ import Corners from "./Corners";
 import type { Sel } from "./ComparisonTable";
 import { generateBattlecard } from "@/lib/api";
 import { KIND_LABEL, fmtDate, freshness, levelClass } from "@/lib/freshness";
-import type { Battlecard, Cell, Comparison, FieldDefinition, Verdict } from "@/lib/types";
+import type { Battlecard, Cell, Comparison, Entity, FieldDefinition, Source, Verdict } from "@/lib/types";
 
 type Row = { f: FieldDefinition; y: Cell; t: Cell; v?: Verdict };
 const trim = (s: string, n = 48) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
+const val = (c: Cell, who: string) => (c.status === "missing" ? `${who}: not in the notes` : c.display_value);
+
+function Card({ title, sub, titleColor, children }: { title: string; sub: string; titleColor?: string; children: React.ReactNode }) {
+  return (
+    <div className="blueprint" style={{ padding: 14 }}>
+      <Corners />
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+        <h5 style={{ margin: 0, color: titleColor }}>{title}</h5><span className="muted" style={{ fontSize: 12 }}>{sub}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Bullets({ items, color, you, comp, source, onSelect }: { items: Row[]; color: string; you: Entity; comp: Entity; source?: Source; onSelect: (s: Sel) => void }) {
+  return (
+    <ul className="bullets">
+      {items.map((r) => (
+        <li key={r.f.id} style={{ cursor: "pointer" }} onClick={() => onSelect({ entityId: comp.id, fieldId: r.f.id })}>
+          <span className="dot" style={{ color }} />
+          <span>
+            <b>{r.f.label}.</b> {you.name}: {val(r.y, you.name)} vs {comp.name}: {val(r.t, comp.name)}.{" "}
+            {r.v?.rationale && <span className="muted">{r.v.rationale}</span>}{" "}
+            {source && <span className={`tag-kind tag-kind-${source.kind}`}>{KIND_LABEL[source.kind]}</span>}{" "}
+            {(r.y.status === "inferred" || r.t.status === "inferred") && <span className="badge badge-inferred">inferred</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const rank = (f: FieldDefinition) => (f.type === "price" ? 0 : f.type === "number" ? 1 : f.type === "boolean" ? 2 : 3);
 
 export default function BattlecardTab({
@@ -34,7 +66,6 @@ export default function BattlecardTab({
   const fresh = source ? freshness(source) : null;
   const card = (comparison.meta.battlecards as Record<string, Battlecard> | undefined)?.[comp.id];
   const toPrepare = compared.filter((r) => r.t.status !== "missing" && (r.v?.verdict === "lose" || r.v?.verdict === "tie" || r.y.status === "missing"));
-  const val = (c: Cell, who: string) => (c.status === "missing" ? `${who}: not in the notes` : c.display_value);
 
   const draft = async () => {
     setBusy(true); setErr("");
@@ -55,31 +86,6 @@ export default function BattlecardTab({
     return lines.join("\n");
   };
   const copy = async () => { try { await navigator.clipboard.writeText(markdown()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {} };
-
-  const Bullets = ({ items, color }: { items: Row[]; color: string }) => (
-    <ul className="bullets">
-      {items.map((r) => (
-        <li key={r.f.id} style={{ cursor: "pointer" }} onClick={() => onSelect({ entityId: comp.id, fieldId: r.f.id })}>
-          <span className="dot" style={{ color }} />
-          <span>
-            <b>{r.f.label}.</b> {you.name}: {val(r.y, you.name)} vs {comp.name}: {val(r.t, comp.name)}.{" "}
-            {r.v?.rationale && <span className="muted">{r.v.rationale}</span>}{" "}
-            {source && <span className={`tag-kind tag-kind-${source.kind}`}>{KIND_LABEL[source.kind]}</span>}{" "}
-            {(r.y.status === "inferred" || r.t.status === "inferred") && <span className="badge badge-inferred">inferred</span>}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-  const Card = ({ title, sub, titleColor, children }: { title: string; sub: string; titleColor?: string; children: React.ReactNode }) => (
-    <div className="blueprint" style={{ padding: 14 }}>
-      <Corners />
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-        <h5 style={{ margin: 0, color: titleColor }}>{title}</h5><span className="muted" style={{ fontSize: 12 }}>{sub}</span>
-      </div>
-      {children}
-    </div>
-  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -109,10 +115,10 @@ export default function BattlecardTab({
 
       <div className="two-col" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
         <Card title={`Where ${you.name} wins`} sub="Lead with these" titleColor="var(--color-accent-800)">
-          {wins.length ? <Bullets items={wins} color="var(--color-accent)" /> : <p className="muted" style={{ margin: 0, fontSize: 13 }}>No row where you clearly win on the evidence in the notes.</p>}
+          {wins.length ? <Bullets items={wins} color="var(--color-accent)" you={you} comp={comp} source={source} onSelect={onSelect} /> : <p className="muted" style={{ margin: 0, fontSize: 13 }}>No row where you clearly win on the evidence in the notes.</p>}
         </Card>
         <Card title={`Where ${comp.name} genuinely wins`} sub="Don't argue these, reframe" titleColor="var(--color-bad)">
-          {loses.length ? <Bullets items={loses} color="var(--color-bad)" /> : <p className="muted" style={{ margin: 0, fontSize: 13 }}>No row where they clearly win on the evidence in the notes.</p>}
+          {loses.length ? <Bullets items={loses} color="var(--color-bad)" you={you} comp={comp} source={source} onSelect={onSelect} /> : <p className="muted" style={{ margin: 0, fontSize: 13 }}>No row where they clearly win on the evidence in the notes.</p>}
         </Card>
         <Card title="Objection handling" sub="What the buyer says, what we say">
           {card?.objections.length ? (
