@@ -1,4 +1,4 @@
-import type { CompareRequest, Comparison, FieldDefinition, Stage, Status } from "./types";
+import type { Battlecard, CompareRequest, Comparison, FieldDefinition, Stage, Status } from "./types";
 
 export const API = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8010";
 
@@ -57,3 +57,11 @@ export const exportComparison = (id: string, format: "markdown" | "csv" | "html"
   fetch(`${API}/api/comparisons/${id}/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format }) })
     .then(ok)
     .then((r) => r.blob());
+
+export const patchSource = (id: string, patch: { source_id: string; outdated?: boolean; captured_at?: string }) =>
+  fetch(`${API}/api/comparisons/${id}/source`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) })
+    .then(ok)
+    .then((r) => r.json() as Promise<Comparison>);
+
+export const generateBattlecard = (id: string, entityId: string) =>
+  fetch(`${API}/api/comparisons/${id}/battlecard/${entityId}`, { method: "POST" }).then(ok).then((r) => r.json() as Promise<Battlecard>);

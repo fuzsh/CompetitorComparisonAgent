@@ -26,7 +26,8 @@ export interface Cell {
 }
 export interface Verdict { field_id: string; entity_id: string; verdict: VerdictKind; rationale: string; method: "rule" | "llm"; confidence?: number | null }
 export interface Entity { id: string; name: string; is_your_company: boolean; source_id: string }
-export interface Source { source_id: string; entity_id: string; text: string }
+export type SourceKind = "notes" | "public" | "internal";
+export interface Source { source_id: string; entity_id: string; text: string; title: string; kind: SourceKind; captured_at: string; outdated: boolean }
 export interface Comparison {
   id: string;
   meta: Record<string, unknown>;
@@ -38,7 +39,9 @@ export interface Comparison {
 }
 export interface VerificationReport { checked_cells: number; downgraded_cells: number; unverified_quotes: number; notes: string[] }
 export interface CompareResponse { comparison: Comparison; verification_report: VerificationReport; partial?: boolean }
-export interface EntityInput { name: string; text: string }
+export interface Objection { field_id: string; objection: string; response: string }
+export interface Battlecard { entity_id: string; objections: Objection[]; generated_at: string }
+export interface EntityInput { name: string; text: string; kind: SourceKind; captured_at: string | null }
 export interface CompareRequest { your_company: EntityInput; competitors: EntityInput[]; industry: string; custom_fields: FieldDefinition[] }
 export type Stage = "segment" | "schema" | "extract" | "verify" | "judge" | "done" | "error";
 export const STAGES: [Stage, string][] = [

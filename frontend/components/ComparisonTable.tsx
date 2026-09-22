@@ -13,8 +13,8 @@ export const StatusBadge = ({ status }: { status: Status }) => <span className={
 export const VerdictBadge = ({ verdict }: { verdict: VerdictKind }) => <span className={`verdict ${verdictClass(verdict)}`}>{VERDICT_LABEL[verdict]}</span>;
 
 export default function ComparisonTable({
-  fields, entities, cells, verdicts, showVerdicts, selected, onSelect,
-}: { fields: FieldDefinition[]; entities: Entity[]; cells: Cell[] | null; verdicts: Verdict[]; showVerdicts: boolean; selected: Sel | null; onSelect: (s: Sel) => void }) {
+  fields, entities, cells, verdicts, showVerdicts, selected, onSelect, stale = new Set<string>(),
+}: { fields: FieldDefinition[]; entities: Entity[]; cells: Cell[] | null; verdicts: Verdict[]; showVerdicts: boolean; selected: Sel | null; onSelect: (s: Sel) => void; stale?: Set<string> }) {
   const you = entities.find((e) => e.is_your_company);
   const cols = [...(you ? [you] : []), ...entities.filter((e) => !e.is_your_company)];
   const cellMap = new Map((cells ?? []).map((c) => [`${c.entity_id}|${c.field_id}`, c]));
@@ -53,6 +53,7 @@ export default function ComparisonTable({
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7, alignItems: "center" }}>
                         <StatusBadge status={c.status} />
                         {v && <VerdictBadge verdict={v.verdict} />}
+                        {stale.has(e.id) && c.status !== "missing" && <span className="tag-stale">stale source</span>}
                       </div>
                     )}
                   </td>
