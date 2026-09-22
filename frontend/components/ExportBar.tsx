@@ -8,25 +8,24 @@ export default function ExportBar({ id, disabled }: { id: string; disabled?: boo
   const download = async (format: "csv" | "html" | "pptx") => {
     try {
       const url = URL.createObjectURL(await exportComparison(id, format));
-      const a = Object.assign(document.createElement("a"), { href: url, download: `comparison.${format}` });
-      a.click();
+      Object.assign(document.createElement("a"), { href: url, download: `comparison.${format}` }).click();
       URL.revokeObjectURL(url);
     } catch (e) { flash(String((e as Error).message ?? e)); }
   };
   const copyMd = async () => {
     try {
       await navigator.clipboard.writeText(await (await exportComparison(id, "markdown")).text());
-      flash("Markdown copied to clipboard");
+      flash("Markdown copied");
     } catch (e) { flash(String((e as Error).message ?? e)); }
   };
-  const btn = "rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800";
+  const s = { fontSize: 12 } as const;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button className={btn} disabled={disabled} onClick={copyMd}>Copy as Markdown</button>
-      <button className={btn} disabled={disabled} onClick={() => download("csv")}>Download CSV</button>
-      <button className={btn} disabled={disabled} onClick={() => download("html")}>Download HTML</button>
-      <button className={btn} disabled={disabled} onClick={() => download("pptx")}>Download PPTX slide</button>
-      {msg && <span className="text-xs text-emerald-600">{msg}</span>}
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <button type="button" className="btn btn-secondary" style={s} disabled={disabled} onClick={copyMd}>Copy Markdown</button>
+      <button type="button" className="btn btn-secondary" style={s} disabled={disabled} onClick={() => download("csv")}>CSV</button>
+      <button type="button" className="btn btn-secondary" style={s} disabled={disabled} onClick={() => download("html")}>HTML</button>
+      <button type="button" className="btn btn-primary" style={s} disabled={disabled} onClick={() => download("pptx")}>PPTX slide</button>
+      {msg && <span className="muted" style={{ fontSize: 11 }}>{msg}</span>}
     </div>
   );
 }

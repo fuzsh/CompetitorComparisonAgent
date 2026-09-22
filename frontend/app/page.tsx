@@ -1,137 +1,232 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import NoteBox from "@/components/NoteBox";
-import TemplatePicker from "@/components/TemplatePicker";
-import YourCompanyBox from "@/components/YourCompanyBox";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ComparisonTable, { type Sel } from "@/components/ComparisonTable";
+import Corners from "@/components/Corners";
+import EvidencePopover from "@/components/EvidencePopover";
+import ExportBar from "@/components/ExportBar";
+import SourceCard from "@/components/SourceCard";
+import StageStrip from "@/components/StageStrip";
+import StatsBar from "@/components/StatsBar";
+import TemplatePicker, { prettyIndustry } from "@/components/TemplatePicker";
+import ThemeToggle from "@/components/ThemeToggle";
 import { API, getExamples, getHealth, getPresets, streamComparison } from "@/lib/api";
-import { STAGES } from "@/lib/types";
-import type { Cell, CompareRequest, CompareResponse, Entity, EntityInput, FieldDefinition, Source, Stage, Verdict, VerificationReport } from "@/lib/types";
+import type { Cell, CompareRequest, CompareResponse, Comparison, Entity, EntityInput, FieldDefinition, Source, Verdict, VerificationReport } from "@/lib/types";
 
 const empty = (): EntityInput => ({ name: "", text: "" });
-type Partial_ = { entities?: Entity[]; sources?: Source[]; fields?: FieldDefinition[]; cells?: Cell[]; verdicts?: Verdict[]; report?: VerificationReport };
+const STAGE_INDEX: Record<string, number> = { segment: 1, schema: 2, extract: 3, verify: 4, judge: 5, done: 6 };
+const SAVED = "comparison";
+type Phase = "empty" | "running" | "done";
+type Live = { entities?: Entity[]; sources?: Source[]; fields?: FieldDefinition[]; cells?: Cell[]; verdicts?: Verdict[]; report?: VerificationReport };
 
-export default function Home() {
-  const router = useRouter();
+export default function Workspace() {
+  // ── inputs ──
   const [you, setYou] = useState<EntityInput>(empty());
   const [comps, setComps] = useState<EntityInput[]>([empty(), empty()]);
   const [industry, setIndustry] = useState("saas");
-  const [industries, setIndustries] = useState<Record<string, string[]>>({ generic: [], saas: [] });
   const [custom, setCustom] = useState<FieldDefinition[]>([]);
+  const [presets, setPresets] = useState<{ industries: string[]; fields: Record<string, FieldDefinition[]>; core: FieldDefinition[] }>({ industries: ["generic", "saas"], fields: {}, core: [] });
   const [examples, setExamples] = useState<Record<string, CompareRequest>>({});
   const [health, setHealth] = useState<Record<string, string | boolean> | null>(null);
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState<Stage[]>([]);
+  // ── run ──
+  const [phase, setPhase] = useState<Phase>("empty");
+  const [stage, setStage] = useState(0);
+  const [live, setLive] = useState<Live>({});
+  const [result, setResult] = useState<CompareResponse | null>(null);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<Sel | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const partial = useRef<Partial_>({});
+  const liveRef = useRef<Live>({});
 
   useEffect(() => {
-    getPresets().then((p) => setIndustries(p.industries)).catch(() => setError(`Backend not reachable at ${API}. Start it with: python main.py`));
+    getPresets().then((p) => setPresets({ industries: Object.keys(p.industries), fields: p.fields, core: p.core_fields }))
+      .catch(() => setError(`Backend not reachable at ${API}. Start it with: python main.py`));
     getExamples().then(setExamples).catch(() => {});
     getHealth().then(setHealth).catch(() => {});
+    try {
+      const raw = sessionStorage.getItem(SAVED);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore client-only storage after hydration
+      if (raw) { setResult(JSON.parse(raw) as CompareResponse); setPhase("done"); }
+    } catch {}
   }, []);
 
-  const loadExample = (r: CompareRequest) => {
-    setYou(r.your_company);
-    setComps(r.competitors);
-    setIndustry(r.industry);
-    setCustom(r.custom_fields ?? []);
-  };
+  // What the table shows: finished result > live stream > the form itself (skeleton rows).
+  const formFields = useMemo(() => {
+    const seen = new Set<string>();
+    return [...presets.core, ...(presets.fields[industry] ?? []), ...custom].filter((f) => !seen.has(f.id) && !!seen.add(f.id));
+  }, [presets, industry, custom]);
+  const formEntities = useMemo<Entity[]>(() => [
+    { id: "you", name: you.name.trim() || "Your company", is_your_company: true, source_id: "src_you" },
+    ...comps.map((c, i) => ({ id: `c${i + 1}`, name: c.name.trim() || `Competitor ${i + 1}`, is_your_company: false, source_id: `src_c${i + 1}` })),
+  ], [you.name, comps]);
+  const formSources = useMemo<Source[]>(() => [
+    { source_id: "src_you", entity_id: "you", text: you.text },
+    ...comps.map((c, i) => ({ source_id: `src_c${i + 1}`, entity_id: `c${i + 1}`, text: c.text })),
+  ], [you.text, comps]);
 
-  const savePartial = () => {
-    const p = partial.current;
-    const payload: CompareResponse = {
-      comparison: { id: "partial", meta: {}, entities: p.entities ?? [], sources: p.sources ?? [], fields: p.fields ?? [], cells: p.cells ?? [], verdicts: p.verdicts ?? [] },
+  const comparison = result?.comparison;
+  const fields = comparison?.fields ?? live.fields ?? formFields;
+  const entities = comparison?.entities ?? live.entities ?? formEntities;
+  const sources = comparison?.sources ?? live.sources ?? formSources;
+  const cells = comparison?.cells ?? live.cells ?? null;
+  const verdictList = comparison?.verdicts ?? live.verdicts;
+  const verdicts = verdictList ?? [];
+  const report = result?.verification_report ?? live.report ?? null;
+  const showValues = cells !== null;
+  const showVerdicts = verdictList !== undefined;
+  const partial = phase === "done" && !!result?.partial;
+  const done = phase === "done" && !!result && !result.partial;
+  const compCount = Math.max(entities.length - 1, 0);
+  const subhead = !showValues
+    ? `${prettyIndustry(industry)} preset · ${fields.length} rows ready. Nothing runs until you press generate.`
+    : phase === "running"
+      ? "Filling in… values appear only once a quote backs them."
+      : partial
+        ? "Partial result — stopped before verdicts. Every value shown is quoted or labelled; nothing was guessed."
+        : "Every value below is either quoted from your notes, labelled as an inference, or left blank on purpose.";
+
+  const persist = (r: CompareResponse | null) => {
+    try {
+      if (r) sessionStorage.setItem(SAVED, JSON.stringify(r));
+      else sessionStorage.removeItem(SAVED);
+    } catch {}
+  };
+  const partialResult = (): CompareResponse => {
+    const p = liveRef.current;
+    return {
+      comparison: { id: "partial", meta: {}, entities: p.entities ?? formEntities, sources: p.sources ?? formSources, fields: p.fields ?? formFields, cells: p.cells ?? [], verdicts: p.verdicts ?? [] },
       verification_report: p.report ?? { checked_cells: 0, downgraded_cells: 0, unverified_quotes: 0, notes: [] },
       partial: true,
     };
-    sessionStorage.setItem("comparison", JSON.stringify(payload));
   };
 
-  const generate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setDone([]);
-    setRunning(true);
-    partial.current = {};
+  const run = async () => {
+    setError(""); setResult(null); setSelected(null); setLive({}); liveRef.current = {}; setStage(0); setPhase("running"); persist(null);
     abort.current = new AbortController();
     const req: CompareRequest = { your_company: you, competitors: comps, industry, custom_fields: custom };
     try {
-      await streamComparison(
-        req,
-        (stage, payload) => {
-          setDone((d) => [...d, stage]);
-          const p = partial.current;
-          if (stage === "segment") { p.entities = payload.entities as Entity[]; p.sources = payload.sources as Source[]; }
-          else if (stage === "schema") p.fields = payload.fields as FieldDefinition[];
-          else if (stage === "extract" || stage === "verify") { p.cells = payload.cells as Cell[]; if (stage === "verify") p.report = payload as unknown as VerificationReport; }
-          else if (stage === "judge") p.verdicts = payload.verdicts as Verdict[];
-          else if (stage === "done") { sessionStorage.setItem("comparison", JSON.stringify(payload)); router.push("/result"); }
-          else if (stage === "error") throw new Error(String(payload.error));
-        },
-        abort.current.signal,
-      );
+      await streamComparison(req, (s, payload) => {
+        const p = liveRef.current;
+        if (s === "segment") { p.entities = payload.entities as Entity[]; p.sources = payload.sources as Source[]; }
+        else if (s === "schema") p.fields = payload.fields as FieldDefinition[];
+        else if (s === "extract" || s === "verify") { p.cells = payload.cells as Cell[]; if (s === "verify") p.report = payload as unknown as VerificationReport; }
+        else if (s === "judge") p.verdicts = payload.verdicts as Verdict[];
+        else if (s === "done") { const r = payload as unknown as CompareResponse; setResult(r); persist(r); }
+        else if (s === "error") throw new Error(String(payload.error));
+        setLive({ ...p });
+        if (STAGE_INDEX[s]) setStage(STAGE_INDEX[s]);
+      }, abort.current.signal);
+      setPhase("done");
     } catch (err) {
-      if (partial.current.cells) { savePartial(); router.push("/result"); return; }
+      if (liveRef.current.cells) { setResult(partialResult()); setPhase("done"); return; }
+      setPhase("empty");
       setError((err as Error).name === "AbortError" ? "Stopped before any cells were extracted." : String((err as Error).message ?? err));
-    } finally {
-      setRunning(false);
     }
   };
+  const reset = () => { setPhase("empty"); setResult(null); setLive({}); liveRef.current = {}; setStage(0); setSelected(null); setError(""); persist(null); };
+  const loadExample = (r: CompareRequest) => { setYou(r.your_company); setComps(r.competitors); setIndustry(r.industry); setCustom(r.custom_fields ?? []); };
+  const updated = (c: Comparison) => { if (!result) return; const next = { ...result, comparison: c }; setResult(next); persist(next); };
 
-  const btn = "rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800";
+  const sel = selected && cells ? {
+    entity: entities.find((e) => e.id === selected.entityId),
+    field: fields.find((f) => f.id === selected.fieldId),
+    cell: cells.find((c) => c.entity_id === selected.entityId && c.field_id === selected.fieldId),
+    source: sources.find((s) => s.entity_id === selected.entityId),
+    verdict: verdicts.find((v) => v.entity_id === selected.entityId && v.field_id === selected.fieldId),
+  } : null;
+  const panelOpen = !!(sel?.entity && sel.field && sel.cell && sel.source);
+  const canRun = !!you.text.trim() && comps.length > 0 && comps.every((c) => c.text.trim());
 
   return (
-    <main className="mx-auto max-w-4xl p-4 sm:p-6">
-      <h1 className="text-xl font-semibold">Competitor Comparison Table</h1>
-      <p className="mb-4 text-sm text-neutral-500">
-        Paste rough notes. Every cell is traced to a verbatim quote, inferences are labeled, gaps are flagged instead of guessed, and each row is marked win / lose / tie against your company.
-        {health && <span className="ml-1">Engine: headless Claude{health.jev_attached ? " + Jev attached" : ""}.</span>}
-      </p>
+    <div className="ws">
+      <header className="nav ws-nav">
+        <div className="nav-brand" style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          Competitor Comparison
+          <span style={{ fontFamily: "var(--font-body)", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "color-mix(in srgb, var(--color-text) 50%, transparent)" }}>evidence-first</span>
+        </div>
+        <div className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          <span style={{ width: 7, height: 7, display: "inline-block", background: health ? "var(--color-accent)" : "color-mix(in srgb, var(--color-text) 30%, transparent)" }} />
+          {health ? `Engine: headless Claude${health.jev_attached ? " · Jev attached" : ""}` : "Engine: connecting…"}
+        </div>
+        <ThemeToggle />
+      </header>
 
-      {Object.keys(examples).length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-neutral-500">Load example:</span>
-          {Object.entries(examples).map(([k, r]) => (
-            <button key={k} type="button" className={btn} onClick={() => loadExample(r)}>{k.replace(/_/g, " ")}</button>
+      <div className="ws-grid">
+        <aside className="ws-aside">
+          <div>
+            <h6 style={{ margin: "0 0 4px" }}>Step 1 · Sources</h6>
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>Paste anything: website copy, call notes, a rough impression. Nothing is invented from thin air — every cell points back here.</p>
+            {Object.keys(examples).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+                {Object.entries(examples).map(([k, r]) => (
+                  <button key={k} type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 6px" }} onClick={() => loadExample(r)}>load {k.replace(/_/g, " ")}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <SourceCard kicker="Your company" anchor value={you} rows={formFields.length} onChange={setYou} />
+          {comps.map((c, i) => (
+            <SourceCard key={i} kicker={`Competitor ${i + 1}`} value={c} rows={formFields.length}
+              onChange={(v) => setComps(comps.map((x, j) => (j === i ? v : x)))}
+              onRemove={comps.length > 1 ? () => setComps(comps.filter((_, j) => j !== i)) : undefined} />
           ))}
-        </div>
-      )}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <button type="button" className="btn btn-secondary" style={{ fontSize: 12 }} disabled={comps.length >= 3} onClick={() => setComps([...comps, empty()])}>+ Add competitor</button>
+            <span style={{ fontSize: 11, color: "var(--color-neutral-700)" }}>3 max, so the table stays readable</span>
+          </div>
 
-      <form onSubmit={generate} className="space-y-4">
-        <YourCompanyBox value={you} onChange={setYou} />
-        {comps.map((c, i) => (
-          <NoteBox key={i} index={i} value={c} onChange={(v) => setComps(comps.map((x, j) => (j === i ? v : x)))} onRemove={() => setComps(comps.filter((_, j) => j !== i))} canRemove={comps.length > 1} />
-        ))}
-        <div className="flex items-center gap-2 text-sm">
-          <button type="button" className={btn} disabled={comps.length >= 3} onClick={() => setComps([...comps, empty()])}>+ Add competitor</button>
-          {comps.length >= 3 && <span className="text-neutral-500">Capped at 3 competitors so the table stays readable.</span>}
-        </div>
-        <TemplatePicker industry={industry} industries={industries} onIndustry={setIndustry} customFields={custom} onCustomFields={setCustom} />
+          <div style={{ height: 1, background: "var(--color-divider)" }} />
 
-        <div className="flex items-center gap-3">
-          <button type="submit" disabled={running} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-            {running ? "Generating…" : "Generate comparison"}
+          <TemplatePicker industry={industry} industries={presets.industries} coreCount={presets.core.length} presetCount={(presets.fields[industry] ?? []).length}
+            onIndustry={setIndustry} customFields={custom} onCustomFields={setCustom} />
+
+          <button type="button" className="btn btn-primary blueprint" onClick={phase === "done" ? reset : run} disabled={phase === "running" || (phase === "empty" && !canRun)}
+            style={{ justifyContent: "center", padding: 12, fontSize: 16, letterSpacing: "0.02em" }}>
+            <Corners />
+            {phase === "running" ? "Generating…" : phase === "done" ? "Start over" : "Generate comparison"}
           </button>
-          {running && <button type="button" className={btn} onClick={() => abort.current?.abort()}>Stop (keep partial)</button>}
-        </div>
-      </form>
+          {phase === "empty" && !canRun && <p className="muted" style={{ margin: "-10px 0 0", fontSize: 11 }}>Add notes for your company and every competitor to enable generation.</p>}
+          {error && <p role="alert" style={{ margin: 0, fontSize: 12, color: "#b3261e" }}>{error}</p>}
+        </aside>
 
-      {(running || done.length > 0) && (
-        <ol className="mt-4 space-y-1 text-sm">
-          {STAGES.map(([stage, label]) => {
-            const isDone = done.includes(stage);
-            const active = running && !isDone && done.length === STAGES.findIndex(([s]) => s === stage);
-            return (
-              <li key={stage} className={isDone ? "text-emerald-600" : active ? "" : "text-neutral-400"}>
-                {isDone ? "✓" : active ? "…" : "○"} {label}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      {error && <p role="alert" className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
-    </main>
+        <main className="ws-main">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>{entities[0]?.name ?? "Your company"} vs. {compCount} competitor{compCount === 1 ? "" : "s"}</h3>
+              <p className="muted" style={{ margin: "2px 0 0", fontSize: 13 }}>{subhead}</p>
+            </div>
+            <ExportBar id={comparison?.id ?? ""} disabled={!done} />
+          </div>
+
+          <StatsBar cells={cells ?? []} verdicts={verdicts} fields={fields} report={report} showValues={showValues} showVerdicts={showVerdicts} total={fields.length * entities.length} />
+
+          {phase === "running" && <StageStrip stage={stage} onStop={() => abort.current?.abort()} />}
+
+          <div style={{ display: "grid", gridTemplateColumns: panelOpen ? "repeat(auto-fit,minmax(300px,1fr))" : "minmax(0,1fr)", gap: 16, alignItems: "start", minWidth: 0 }}>
+            <ComparisonTable fields={fields} entities={entities} cells={cells} verdicts={verdicts} showVerdicts={showVerdicts} selected={selected} onSelect={setSelected} />
+            {panelOpen && sel && (
+              <EvidencePopover key={`${sel.entity!.id}|${sel.field!.id}|${sel.cell!.status}|${sel.cell!.display_value}`}
+                entity={sel.entity!} field={sel.field!} cell={sel.cell!} source={sel.source!} verdict={sel.verdict}
+                comparisonId={comparison?.id ?? ""} editable={done} onClose={() => setSelected(null)} onUpdated={updated} />
+            )}
+          </div>
+
+          <div className="muted" style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", fontSize: 11 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 10, display: "inline-block", background: "color-mix(in srgb, var(--color-accent) 22%, transparent)", border: "1px solid var(--color-accent)" }} /> you win this row</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 10, display: "inline-block", background: "color-mix(in srgb, var(--color-text) 12%, transparent)" }} /> you lose</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 10, display: "inline-block", border: "1px solid color-mix(in srgb, var(--color-text) 25%, transparent)" }} /> even</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="hatch" style={{ width: 16, height: 10, display: "inline-block", border: "1px dashed color-mix(in srgb, var(--color-text) 30%, transparent)" }} /> not enough data — never guessed</span>
+            <span style={{ marginLeft: "auto" }}>Click any cell to see the sentence it came from.</span>
+          </div>
+
+          {report && report.notes.length > 0 && (
+            <details className="muted" style={{ fontSize: 12 }}>
+              <summary style={{ cursor: "pointer" }}>Verification notes ({report.notes.length})</summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{report.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            </details>
+          )}
+        </main>
+      </div>
+    </div>
   );
 }

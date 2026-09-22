@@ -46,12 +46,16 @@ python main.py               # http://localhost:8010  (needs `claude` on PATH an
 cd frontend && npm install && npm run dev   # http://localhost:3000
 ```
 
-Open http://localhost:3000, click **Load example → worked example**, then **Generate comparison**. Click any cell to
-see the supporting quote highlighted in the source notes; edit a cell to re-judge that row; export from the bar.
+Open http://localhost:3000. The UI is a single **Comparison Workspace** (implemented from the Claude Design
+project "Comparison Workspace (redesign)" on the Industry design system): a sticky sources sidebar on the left
+(your company as the anchor column, up to three competitors with a sentence meter, industry preset and custom rows,
+one Generate button) and the results on the right (evidence mix, verdict counts and a verification receipt; the
+blueprint-framed table with stated / inferred / missing badges and win / lose tints; an evidence panel that highlights
+the exact quote in the source notes and lets you edit a cell and re-judge its row; Markdown / CSV / HTML / PPTX
+export). Click **load worked example** in the sidebar for the demo inputs. Theme: light / system / dark in the header.
 
-Skills live in `.claude/skills/` so an interactive Claude Code session in this repo discovers them (the plan's
-`skills/` path is a symlink to the same folder). The headless extraction calls run tool-less with their own system
-prompt and do not use skills.
+The design system's CSS is ported verbatim to `frontend/app/industry.css`; dark-mode tokens and the workspace
+classes live in `frontend/app/globals.css`.
 
 ## API
 

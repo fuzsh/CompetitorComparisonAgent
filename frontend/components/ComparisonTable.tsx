@@ -1,84 +1,58 @@
 "use client";
-import type { Cell, Comparison, Status } from "@/lib/types";
+import Corners from "./Corners";
+import type { Cell, ComparisonRule, Entity, FieldDefinition, Status, Verdict, VerdictKind } from "@/lib/types";
 
-export const VERDICT_STYLE: Record<string, string> = {
-  win: "bg-emerald-100 dark:bg-emerald-900/40",
-  lose: "bg-rose-100 dark:bg-rose-900/40",
-  tie: "bg-neutral-100 dark:bg-neutral-800/60",
-  "n/a": "bg-neutral-50 dark:bg-neutral-900",
+export type Sel = { entityId: string; fieldId: string };
+export const RULE_LABEL: Record<ComparisonRule, string> = {
+  lower_is_better: "lower is better", higher_is_better: "higher is better", presence_is_better: "presence is better", qualitative_llm: "qualitative", not_compared: "not compared",
 };
-export const ICON: Record<string, string> = { win: "✅", lose: "❌", tie: "➖", "n/a": "⚪" };
-const border = "border border-neutral-200 dark:border-neutral-800";
+export const VERDICT_LABEL: Record<VerdictKind, string> = { win: "↑ you win", lose: "↓ you lose", tie: "= even", "n/a": "· no data" };
+const verdictClass = (v: VerdictKind) => (v === "n/a" ? "verdict-na" : `verdict-${v}`);
 
-export function StatusBadge({ status }: { status: Status }) {
-  const cls =
-    status === "stated"
-      ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-      : status === "inferred"
-        ? "border border-neutral-500 italic text-neutral-700 dark:text-neutral-300"
-        : "border border-neutral-300 text-neutral-500 dark:border-neutral-700";
-  return <span className={`ml-1 inline-block rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${cls}`}>{status}</span>;
-}
-
-function CellView({ cell }: { cell?: Cell }) {
-  if (!cell) return <span className="text-neutral-400">…</span>;
-  if (cell.status === "missing")
-    return (
-      <span className="italic text-neutral-500">
-        insufficient info <StatusBadge status="missing" />
-      </span>
-    );
-  return (
-    <span className={cell.status === "inferred" ? "italic" : ""} title={`confidence ${Math.round(cell.confidence * 100)}%${cell.note ? " · " + cell.note : ""}`}>
-      {cell.display_value}
-      <StatusBadge status={cell.status} />
-    </span>
-  );
-}
+export const StatusBadge = ({ status }: { status: Status }) => <span className={`badge badge-${status}`}>{status}</span>;
+export const VerdictBadge = ({ verdict }: { verdict: VerdictKind }) => <span className={`verdict ${verdictClass(verdict)}`}>{VERDICT_LABEL[verdict]}</span>;
 
 export default function ComparisonTable({
-  comparison, selected, onSelect,
-}: { comparison: Comparison; selected?: { entityId: string; fieldId: string } | null; onSelect: (entityId: string, fieldId: string) => void }) {
-  const you = comparison.entities.find((e) => e.is_your_company)!;
-  const comps = comparison.entities.filter((e) => !e.is_your_company);
-  const cells = new Map(comparison.cells.map((c) => [`${c.entity_id}|${c.field_id}`, c]));
-  const verdicts = new Map(comparison.verdicts.map((v) => [`${v.entity_id}|${v.field_id}`, v]));
-  const ring = (e: string, f: string) => (selected?.entityId === e && selected?.fieldId === f ? "outline outline-2 outline-blue-500" : "");
-  const td = `${border} cursor-pointer p-2 align-top hover:outline hover:outline-1 hover:outline-blue-400`;
+  fields, entities, cells, verdicts, showVerdicts, selected, onSelect,
+}: { fields: FieldDefinition[]; entities: Entity[]; cells: Cell[] | null; verdicts: Verdict[]; showVerdicts: boolean; selected: Sel | null; onSelect: (s: Sel) => void }) {
+  const you = entities.find((e) => e.is_your_company);
+  const cols = [...(you ? [you] : []), ...entities.filter((e) => !e.is_your_company)];
+  const cellMap = new Map((cells ?? []).map((c) => [`${c.entity_id}|${c.field_id}`, c]));
+  const verdictMap = new Map(verdicts.map((v) => [`${v.entity_id}|${v.field_id}`, v]));
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+    <div className="blueprint" style={{ padding: 0, overflowX: "auto" }}>
+      <Corners />
+      <table className="table" style={{ minWidth: 640 }}>
         <thead>
-          <tr className="bg-neutral-100 dark:bg-neutral-900">
-            <th className={`${border} p-2 text-left`}>Field</th>
-            <th className={`${border} p-2 text-left`}>
-              {you.name} <span className="text-xs font-normal text-neutral-500">(you)</span>
-            </th>
-            {comps.map((c) => (
-              <th key={c.id} className={`${border} p-2 text-left`}>{c.name}</th>
+          <tr>
+            <th style={{ width: 170, padding: "10px 12px" }}>Field</th>
+            {cols.map((e) => (
+              <th key={e.id} className={e.is_your_company ? "col-you" : undefined} style={{ padding: "10px 12px" }}>
+                {e.name}{e.is_your_company ? " — you" : ""}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {comparison.fields.map((f) => (
+          {fields.map((f) => (
             <tr key={f.id}>
-              <th scope="row" className={`${border} p-2 text-left font-medium`}>
-                {f.label}
-                {f.custom && <span className="ml-1 text-[10px] font-normal text-neutral-500">custom</span>}
+              <th scope="row" className="row-th">
+                {f.label}{f.custom && <span className="kicker" style={{ marginLeft: 6 }}>custom</span>}
+                <div className="row-rule">{RULE_LABEL[f.comparison_rule]}</div>
               </th>
-              <td className={`${td} ${ring(you.id, f.id)}`} onClick={() => onSelect(you.id, f.id)}>
-                <CellView cell={cells.get(`${you.id}|${f.id}`)} />
-              </td>
-              {comps.map((c) => {
-                const v = verdicts.get(`${c.id}|${f.id}`);
+              {cols.map((e) => {
+                const c = cellMap.get(`${e.id}|${f.id}`);
+                const v = showVerdicts && !e.is_your_company && f.comparison_rule !== "not_compared" ? verdictMap.get(`${e.id}|${f.id}`) : undefined;
+                const isSel = selected?.entityId === e.id && selected?.fieldId === f.id;
+                const cls = ["cell", c?.status === "missing" ? "hatch" : "", v?.verdict === "win" ? "cell-win" : v?.verdict === "lose" ? "cell-lose" : "", isSel ? "cell-selected" : ""].join(" ");
                 return (
-                  <td key={c.id} className={`${td} ${v ? VERDICT_STYLE[v.verdict] : ""} ${ring(c.id, f.id)}`} onClick={() => onSelect(c.id, f.id)}>
-                    <CellView cell={cells.get(`${c.id}|${f.id}`)} />
-                    {v && (
-                      <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400" title={v.rationale}>
-                        <span aria-hidden>{ICON[v.verdict]}</span> <b>{v.verdict === "n/a" ? "insufficient data" : v.verdict}</b> · {v.rationale}
-                        <span className="ml-1 text-neutral-400">({v.method})</span>
+                  <td key={e.id} className={cls} style={c ? undefined : { cursor: "default" }} onClick={c ? () => onSelect({ entityId: e.id, fieldId: f.id }) : undefined}>
+                    {c ? <div className={`cell-value ${c.status}`}>{c.status === "missing" ? "not in the notes" : c.display_value}</div> : <div className="skeleton" />}
+                    {c && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7, alignItems: "center" }}>
+                        <StatusBadge status={c.status} />
+                        {v && <VerdictBadge verdict={v.verdict} />}
                       </div>
                     )}
                   </td>

@@ -1,34 +1,22 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Corners from "./Corners";
+import { VERDICT_LABEL } from "./ComparisonTable";
 import { patchCell } from "@/lib/api";
-import type { Comparison, Status } from "@/lib/types";
-import { ICON, StatusBadge } from "./ComparisonTable";
+import type { Cell, Comparison, Entity, FieldDefinition, Source, Status, Verdict } from "@/lib/types";
 
 export default function EvidencePopover({
-  comparison, selected, editable, onClose, onUpdated,
+  entity, field, cell, source, verdict, comparisonId, editable, onClose, onUpdated,
 }: {
-  comparison: Comparison;
-  selected: { entityId: string; fieldId: string };
-  editable: boolean;
-  onClose: () => void;
-  onUpdated: (c: Comparison) => void;
+  entity: Entity; field: FieldDefinition; cell: Cell; source: Source; verdict?: Verdict;
+  comparisonId: string; editable: boolean; onClose: () => void; onUpdated: (c: Comparison) => void;
 }) {
-  const entity = comparison.entities.find((e) => e.id === selected.entityId)!;
-  const field = comparison.fields.find((f) => f.id === selected.fieldId)!;
-  const cell = comparison.cells.find((c) => c.entity_id === selected.entityId && c.field_id === selected.fieldId);
-  const source = comparison.sources.find((s) => s.source_id === entity.source_id)!;
-  const verdict = comparison.verdicts.find((v) => v.entity_id === selected.entityId && v.field_id === selected.fieldId);
-  const [value, setValue] = useState(cell?.display_value ?? "");
-  const [status, setStatus] = useState<Status>(cell?.status ?? "missing");
+  const [value, setValue] = useState(cell.display_value);
+  const [status, setStatus] = useState<Status>(cell.status);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  useEffect(() => {
-    setValue(cell?.display_value ?? "");
-    setStatus(cell?.status ?? "missing");
-    setErr("");
-  }, [cell]);
 
-  const spans = [...(cell?.evidence ?? [])].filter((e) => e.verified).sort((a, b) => a.start_char - b.start_char);
+  const spans = [...cell.evidence].filter((e) => e.verified).sort((a, b) => a.start_char - b.start_char);
   const parts: { text: string; mark: boolean }[] = [];
   let pos = 0;
   for (const s of spans) {
@@ -37,63 +25,64 @@ export default function EvidencePopover({
     pos = s.end_char;
   }
   parts.push({ text: source.text.slice(pos), mark: false });
-  const bucket = !cell ? "" : cell.confidence >= 0.75 ? "high" : cell.confidence >= 0.5 ? "medium" : "low";
 
-  const save = async () => {
+  const missing = cell.status === "missing";
+  const bucket = cell.confidence >= 0.75 ? "high" : cell.confidence >= 0.5 ? "medium" : "low";
+  const verdictText = entity.is_your_company
+    ? "Anchor column — every competitor verdict is computed against this value."
+    : field.comparison_rule === "not_compared"
+      ? "This row is context only — no win / lose is claimed."
+      : verdict
+        ? `${VERDICT_LABEL[verdict.verdict]} — ${verdict.rationale} (${verdict.method})`
+        : "Verdict not computed yet.";
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
     setSaving(true);
     setErr("");
     try {
-      onUpdated(await patchCell(comparison.id, { field_id: field.id, entity_id: entity.id, value: status === "missing" ? null : value, status }));
-    } catch (e) {
-      setErr(String((e as Error).message ?? e));
+      onUpdated(await patchCell(comparisonId, { field_id: field.id, entity_id: entity.id, value: status === "missing" ? null : value, status }));
+    } catch (ex) {
+      setErr(String((ex as Error).message ?? ex));
     } finally {
       setSaving(false);
     }
   };
-  const input = "rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700";
 
   return (
-    <aside className="sticky top-4 max-h-[90vh] overflow-auto rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <h2 className="font-semibold">
-          {entity.name} · {field.label}
-        </h2>
-        <button onClick={onClose} aria-label="Close" className="text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">✕</button>
-      </div>
-      {cell && (
-        <>
-          <p>
-            <span className="text-neutral-500">Value:</span> {cell.status === "missing" ? "—" : cell.display_value} <StatusBadge status={cell.status} />
-          </p>
-          <p className="text-xs text-neutral-500">
-            Confidence: {bucket} ({Math.round(cell.confidence * 100)}%){cell.note ? ` · ${cell.note}` : ""}
-          </p>
-        </>
-      )}
-      {verdict && (
-        <p className="mt-2">
-          <span aria-hidden>{ICON[verdict.verdict]}</span> <b>{verdict.verdict}</b> — {verdict.rationale} <span className="text-neutral-500">({verdict.method})</span>
+    <aside style={{ minWidth: 0 }}>
+      <div className="blueprint" style={{ padding: 14, position: "sticky", top: 16 }}>
+        <Corners />
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div>
+            <div className="kicker kicker-accent">Evidence</div>
+            <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 19, lineHeight: 1.15 }}>{entity.name} · {field.label}</div>
+          </div>
+          <button type="button" className="btn btn-ghost" onClick={onClose} aria-label="Close evidence panel" style={{ fontSize: 14, padding: "0 6px" }}>✕</button>
+        </div>
+        <p style={{ margin: "0 0 4px", fontSize: 14 }}>{missing ? "— not stated in the notes" : cell.display_value}</p>
+        <p className="muted" style={{ margin: "0 0 10px", fontSize: 11 }}>
+          {missing ? "No sentence in these notes mentions this field. Left blank rather than guessed." : `Confidence ${bucket} (${Math.round(cell.confidence * 100)}%)${cell.note ? ` · ${cell.note}` : ""}`}
         </p>
-      )}
-      <h3 className="mt-3 text-xs font-medium uppercase tracking-wide text-neutral-500">Source notes</h3>
-      {spans.length === 0 && <p className="my-1 italic text-neutral-500">No supporting text found in notes.</p>}
-      <pre className="mt-1 whitespace-pre-wrap rounded-md border border-neutral-200 bg-white p-2 font-sans text-sm dark:border-neutral-800 dark:bg-neutral-950">
-        {parts.map((p, i) => (p.mark ? <mark key={i} className="rounded bg-amber-200 px-0.5 text-neutral-900">{p.text}</mark> : <span key={i}>{p.text}</span>))}
-      </pre>
-      {editable && cell && (
-        <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); save(); }}>
-          <input className={`${input} flex-1 min-w-32`} value={value} onChange={(e) => setValue(e.target.value)} placeholder={field.type === "price" ? "e.g. $10/month" : "value"} disabled={status === "missing"} />
-          <select className={input} value={status} onChange={(e) => setStatus(e.target.value as Status)}>
-            <option value="stated">stated</option>
-            <option value="inferred">inferred</option>
-            <option value="missing">missing</option>
-          </select>
-          <button type="submit" disabled={saving} className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50">
-            {saving ? "Re-judging…" : "Save & re-judge row"}
-          </button>
-          {err && <span className="text-xs text-red-600">{err}</span>}
-        </form>
-      )}
+        <div style={{ padding: "9px 11px", background: "color-mix(in srgb, var(--color-accent) 9%, transparent)", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>{verdictText}</div>
+        <div className="kicker" style={{ marginBottom: 5 }}>Traced to source notes</div>
+        <div className="source-box" style={spans.length ? undefined : { color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+          {parts.map((p, i) => (p.mark ? <span key={i} className="quote-mark">{p.text}</span> : <span key={i}>{p.text}</span>))}
+        </div>
+        {editable && (
+          <form onSubmit={save} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12, alignItems: "center" }}>
+            <input className="input" value={value} onChange={(e) => setValue(e.target.value)} disabled={status === "missing"} aria-label="Cell value"
+              placeholder={field.type === "price" ? "e.g. $10/month" : "value"} style={{ flex: "1 1 120px", fontSize: 13 }} />
+            <select className="input" value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Cell status" style={{ width: "auto", fontSize: 12 }}>
+              <option value="stated">stated</option>
+              <option value="inferred">inferred</option>
+              <option value="missing">missing</option>
+            </select>
+            <button type="submit" className="btn btn-secondary" disabled={saving} style={{ fontSize: 12 }}>{saving ? "Re-judging…" : "Save & re-judge"}</button>
+            {err && <span style={{ fontSize: 11, color: "#b3261e" }}>{err}</span>}
+          </form>
+        )}
+      </div>
     </aside>
   );
 }

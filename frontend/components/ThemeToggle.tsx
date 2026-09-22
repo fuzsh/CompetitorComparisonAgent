@@ -15,6 +15,7 @@ export default function ThemeToggle() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("theme") as Theme | null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore client-only storage after hydration
       if (saved && THEMES.includes(saved)) setTheme(saved);
     } catch {}
   }, []);
@@ -33,17 +34,12 @@ export default function ThemeToggle() {
   };
 
   return (
-    <div role="group" aria-label="Theme" className="inline-flex overflow-hidden rounded-md border border-neutral-300 text-xs dark:border-neutral-700">
+    <div className="seg" role="radiogroup" aria-label="Theme" style={{ fontSize: 12 }}>
       {THEMES.map((t) => (
-        <button
-          key={t}
-          type="button"
-          aria-pressed={theme === t}
-          onClick={() => choose(t)}
-          className={`px-2.5 py-1 capitalize ${theme === t ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900" : "hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
-        >
-          {t === "light" ? "☀ light" : t === "dark" ? "☾ dark" : "system"}
-        </button>
+        <label key={t} className="seg-opt">
+          <input type="radio" name="theme" value={t} checked={theme === t} onChange={() => choose(t)} />
+          <span style={{ textTransform: "capitalize" }}>{t}</span>
+        </label>
       ))}
     </div>
   );
