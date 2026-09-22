@@ -1,1 +1,4 @@
 @import "tailwindcss";
+
+/* dark: variant follows the .dark class on <html> (set by ThemeToggle) instead of only the OS setting */
+@custom-variant dark (&:where(.dark, .dark *));
